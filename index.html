@@ -170,7 +170,6 @@
             border-radius: 6px;
             border: 1px solid #d1d5db;
         }
-        /* 图表容器：高度由 JS 中 canvas 决定，只控制最大高度 & 滚动 */
         #chartContainer {
             width: 100%;
             max-height: 600px;
@@ -185,7 +184,7 @@
         /* 表格容器样式 */
         #tableContainer {
             margin-top: 16px;
-            max-height: 600px;
+            max-height: 300px;
             overflow: auto;
             border-radius: 8px;
             border: 1px solid #e5e7eb;
@@ -212,9 +211,40 @@
         #tableContainer td:first-child {
             text-align: left;
         }
-       /* #tableContainer tr:nth-child(even) td {
-            background: #fafafa;
-        }*/
+
+        /* 重复获奖角色列表 */
+        #dupContainer {
+            margin-top: 16px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            font-size: 12px;
+        }
+        #dupContainer h3 {
+            margin: 0 0 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+        }
+        #dupContainer table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #dupContainer th,
+        #dupContainer td {
+            padding: 4px 6px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: right;
+        }
+        #dupContainer th:first-child,
+        #dupContainer td:first-child {
+            text-align: left;
+        }
+        #dupContainer .dup-empty {
+            font-size: 12px;
+            color: #6b7280;
+        }
 
         @media (max-width: 768px) {
             .card {
@@ -314,8 +344,11 @@ time,roleid
             <canvas id="rewardChart"></canvas>
         </div>
 
-        <!-- 新增：表格容器 -->
+        <!-- 表格容器 -->
         <div id="tableContainer"></div>
+
+        <!-- 重复获奖角色列表 -->
+        <div id="dupContainer"></div>
     </div>
 </div>
 
@@ -535,6 +568,7 @@ time,roleid
     ) {
         const countsAll = {};        // 所有日期汇总： key = 分钟索引(0~1439)
         const countsByDate = {};     // 每个具体日期： countsByDate[date][idx] = 次数
+        const roleCounts = {};       // 当前筛选条件下，各 roleid 的次数
 
         // 先统计所有数据
         data.forEach(row => {
@@ -544,13 +578,28 @@ time,roleid
 
             const idx = hhmmToMinutes(hhmm);
 
-            // 所有日期的汇总
+            // 所有日期的汇总（不受时间段过滤影响，供整体分布用）
             countsAll[idx] = (countsAll[idx] || 0) + 1;
 
             // 按日期统计
             if (dateStr) {
                 if (!countsByDate[dateStr]) countsByDate[dateStr] = {};
                 countsByDate[dateStr][idx] = (countsByDate[dateStr][idx] || 0) + 1;
+            }
+
+            // 统计当前筛选条件下的角色获奖次数：
+            // 仅统计：时间在 [startMinutes, endMinutes] 内，
+            // 并且日期满足 (无日期过滤) 或 (是日期 / 对比日期之一)
+            const inTime = idx >= startMinutes && idx <= endMinutes;
+            let inDate = true;
+            if (dateFilter ) {
+                inDate = !!(dateStr && dateStr === dateFilter);
+            }
+            if (inTime && inDate) {
+                const rid = row.roleid;
+                if (rid) {
+                    roleCounts[rid] = (roleCounts[rid] || 0) + 1;
+                }
             }
         });
 
@@ -568,7 +617,7 @@ time,roleid
             baseCounts = countsAll;
         }
 
-        if (compareDate && compareDate !== dateFilter) {
+        if (compareDate &&Date !== dateFilter) {
             compareLabel = compareDate;
             compareCounts = countsByDate[compareDate] || {};
         }
@@ -616,7 +665,7 @@ time,roleid
             data: baseValues,
             backgroundColor: chartType === 'bar'
                 ? baseBgBar
-                : 'rgba(129,140 , 248, 0.15)',
+                : 'rgba(129, 140, 248, 0.15)',
             borderColor: baseColor,
             borderWidth: chartType === 'bar' ? 1 : 1.5,
             tension: 0.25,
@@ -716,99 +765,122 @@ time,roleid
             }
         });
 
-        // 生成表格
+        // 生成时段表格
         renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes);
+
+        // 生成重复获奖角色列表
+        renderRoleDuplicates(roleCounts);
     }
 
-    // 根据当前结果生成表格
-    // 根据当前结果生成表格，并按数量用色阶填充整行背景
-function renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes) {
-    const container = document.getElementById('tableContainer');
-    if (!container) return;
+    // 根据当前结果生成“时间段”表格（带色阶）
+    function renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes) {
+        const container = document.getElementById('tableContainer');
+        if (!container) return;
 
-    if (!labels || labels.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-
-    const hasCompare = !!(compareLabel && compareValues && compareValues.length === labels.length);
-
-    // 计算每一行的“用于着色的值” = max(主, 对比)
-    const rowValues = labels.map((_, i) => {
-        const v1 = baseValues[i] || 0;
-        const v2 = hasCompare ? (compareValues[i] || 0) : 0;
-        return Math.max(v1, v2);
-    });
-
-    let minVal = Math.min(...rowValues);
-    let maxVal = Math.max(...rowValues);
-    if (minVal === maxVal) {
-        // 所有值一样时，避免除以 0，统一用中间值
-        minVal = maxVal - 1;
-    }
-
-    // 映射 [minVal, maxVal] -> [0,1]
-    function normalize(v) {
-        return (v - minVal) / (maxVal - minVal);
-    }
-
-    // 简单色阶：0 → 绿色(#e5f9e7)，0.5 → 黄色(#fff7c2)，1 → 红色(#fde2e1)
-    function valueToColor(v) {
-        const t = normalize(v);
-
-        // 三段渐变：0-0.5: 绿 -> 黄；0.5-1: 黄 -> 红
-        function lerp(a, b, t) { return a + (b - a) * t; }
-
-        let r, g, b;
-
-        if (t <= 0.5) {
-            // 绿(#e5f9e7) -> 黄(#fff7c2)
-            const t2 = t / 0.5;
-            r = lerp(0xe5, 0xff, t2);
-            g = lerp(0xf9, 0xf7, t2);
-            b = lerp(0xe7, 0xc2, t2);
-        } else {
-            // 黄(#fff7c2) -> 红(#fde2e1)
-            const t2 = (t - 0.5) / 0.5;
-            r = lerp(0xff, 0xfd, t2);
-            g = lerp(0xf7, 0xe2, t2);
-            b = lerp(0xc2, 0xe1, t2);
+        if (!labels || labels.length === 0) {
+            container.innerHTML = '';
+            return;
         }
 
-        r = Math.round(r);
-        g = Math.round(g);
-        b = Math.round(b);
-        return `rgb(${r}, ${g}, ${b})`;
-    }
+        const hasCompare = !!(compareLabel && compareValues && compareValues.length === labels.length);
 
-    let html = '<table><thead><tr>';
-    html += '<th>时间' + (stepMinutes > 1 ? '区间' : '') + '</th>';
-    html += `<th>${baseLabel || '主数据'}</th>`;
-    if (hasCompare) {
-        html += `<th>${compareLabel}</th>`;
-    }
-    html += '</tr></thead><tbody>';
+        // 计算每一行的“用于着色的值” = max(主, 对比)
+        const rowValues = labels.map((_, i) => {
+            const v1 = baseValues[i] || 0;
+            const v2 = hasCompare ? (compareValues[i] || 0) : 0;
+            return Math.max(v1, v2);
+        });
 
-    for (let i = 0; i < labels.length; i++) {
-        const tLabel = labels[i];
-        const baseVal = baseValues[i] || 0;
-        const rowVal = rowValues[i];
-        const bgColor = valueToColor(rowVal);
+        let minVal = Math.min(...rowValues);
+        let maxVal = Math.max(...rowValues);
+        if (minVal === maxVal) {
+            minVal = maxVal - 1;
+        }
 
-        html += `<tr style="background:${bgColor};">`;
-        html += `<td>${tLabel}</td>`;
-        html += `<td>${baseVal}</td>`;
+        function normalize(v) {
+            return (v - minVal) / (maxVal - minVal);
+        }
+
+        // 色阶：0 → 绿色; 0.5 → 黄; 1 → 红
+        function valueToColor(v) {
+            const t = normalize(v);
+
+            function lerp(a, b, t) { return a + (b - a) * t; }
+
+            let r, g, b;
+
+            if (t <= 0.5) {
+                const t2 = t / 0.5;
+                // 绿(#e5f9e7) -> 黄(#fff7c2)
+                r = lerp(0xe5, 0xff, t2);
+                g = lerp(0xf9, 0xf7, t2);
+                b = lerp(0xe7, 0xc2, t2);
+            } else {
+                const t2 = (t - 0.5) / 0.5;
+                // 黄(#fff7c2) -> 红(#fde2e1)
+                r = lerp(0xff, 0xfd, t2);
+                g = lerp(0xf7, 0xe2, t2);
+                b = lerp(0xc2, 0xe1, t2);
+            }
+
+            r = Math.round(r);
+            g = Math.round(g);
+            b = Math.round(b);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        let html = '<table><thead><tr>';
+        html += '<th>时间' + (stepMinutes > 1 ? '区间' : '') + '</th>';
+        html += `<th>${baseLabel || '主数据'}</th>`;
         if (hasCompare) {
-            const cmpVal = compareValues[i] || 0;
-            html += `<td>${cmpVal}</td>`;
+            html += `<th>${compareLabel}</th>`;
         }
-        html += '</tr>';
+        html += '</tr></thead><tbody>';
+
+        for (let i = 0; i < labels.length; i++) {
+            const tLabel = labels[i];
+            const baseVal = baseValues[i] || 0;
+            const rowVal = rowValues[i];
+            const bgColor = valueToColor(rowVal);
+
+            html += `<tr style="background:${bgColor};">`;
+            html += `<td>${tLabel}</td>`;
+            html += `<td>${baseVal}</td>`;
+            if (hasCompare) {
+                const cmpVal = compareValues[i] || 0;
+                html += `<td>${cmpVal}</td>`;
+            }
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
     }
 
-    html += '</tbody></table>';
-    container.innerHTML = html;
-}
+    // 生成重复获奖角色表
+    function renderRoleDuplicates(roleCounts) {
+        const container = document.getElementById('dupContainer');
+        if (!container) return;
 
+        const entries = Object.entries(roleCounts)
+            .filter(([, count]) => count > 1)
+            .sort((a, b) => b[1] - a[1]); // 按次数从高到低
+
+        if (entries.length === 0) {
+            container.innerHTML = '<div class="dup-empty">当前筛选条件下，没有玩家获得多个奖励。</div>';
+            return;
+        }
+
+        let html = '<h3>多次获得奖励的玩家</h3>';
+        html += '<table><thead><tr><th>roleid</th><th>获得次数</th></tr></thead><tbody>';
+
+        for (const [roleid, count] of entries) {
+            html += `<tr><td>${roleid}</td><td>${count}</td></tr>`;
+        }
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
 </script>
 </body>
 </html>
