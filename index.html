@@ -184,7 +184,7 @@
         /* 表格容器样式 */
         #tableContainer {
             margin-top: 16px;
-            max-height: 600px;
+            max-height: 300px;
             overflow: auto;
             border-radius: 8px;
             border: 1px solid #e5e7eb;
@@ -245,7 +245,15 @@
             font-size: 12px;
             color: #6b7280;
         }
-
+        #summaryContainer {
+            margin-top: 16px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: #ecfdf5; /* 淡绿色背景 */
+            font-size: 12px;
+            color: #166534;
+        }
         @media (max-width: 768px) {
             .card {
                 padding: 16px 14px 18px;
@@ -339,6 +347,8 @@ time,roleid
             </div>
             <div id="msg"></div>
         </div>
+        <!-- 累积投放数量 -->
+        <div id="summaryContainer"></div>
 
         <div id="chartContainer">
             <canvas id="rewardChart"></canvas>
@@ -764,7 +774,8 @@ time,roleid
                 }
             }
         });
-
+        // 累积已投放数量（只看主日期 + 时间段）
+        renderSummary(roleCounts, dateFilter, startMinutes, endMinutes);
         // 生成时段表格
         renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes);
 
@@ -857,6 +868,15 @@ time,roleid
         container.innerHTML = html;
     }
 
+    // 累积已投放数量（只看主日期 + 时间段）
+    function renderSummary(roleCounts, dateFilter, startMinutes, endMinutes) {
+        const container = document.getElementById('summaryContainer');
+        if (!container) return;
+
+        const summary = Object.values(roleCounts).reduce((acc, count) => acc + count, 0);
+        container.innerHTML = `<div>累积已投放数量：${summary}</div>`;
+    }
+    
     // 生成重复获奖角色表
     function renderRoleDuplicates(roleCounts) {
         const container = document.getElementById('dupContainer');
@@ -884,4 +904,3 @@ time,roleid
 </script>
 </body>
 </html>
-
