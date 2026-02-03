@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>一天中每分钟获奖人数分布（对比两天）</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            background: #f5f7fb;
+            color: #333;
+        }
+        .page-wrapper {
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 40px 16px;
+        }
+        .card {
+            width: 100%;
+            max-width: 1100px;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            padding: 24px 28px 28px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        .card-header-left h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+            color: #111827;
+        }
+        .card-header-left p {
+            margin: 4px 0 0;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .card-header-right {
+            text-align: right;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .section-title span.tag {
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4f46e5;
+        }
+        .textarea-wrapper {
+            margin-top: 6px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            padding: 8px;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+        }
+        .textarea-wrapper:focus-within {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.25);
+            background: #fff;
+        }
+        textarea {
+            width: 100%;
+            height: 160px;
+            resize: vertical;
+            border: none;
+            outline: none;
+            font-family: "JetBrains Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            background: transparent;
+            color: #111827;
+        }
+        .example-box {
+            font-size: 12px;
+            color: #6b7280;
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-top: 6px;
+            white-space: pre-wrap;
+            font-family: "JetBrains Mono", Consolas, monospace;
+        }
+        .control-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 12px;
+            gap: 8px;
+        }
+        .btn-primary {
+            border: none;
+            outline: none;
+            border-radius: 999px;
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 500;
+            background: linear-gradient(135deg, #4f46e5, #6366f1);
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
+        }
+        .btn-primary:hover {
+            filter: brightness(1.05);
+            box-shadow: 0 8px 18px rgba(79, 70, 229, 0.45);
+        }
+        .btn-primary:active {
+            transform: translateY(1px);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+        }
+        .btn-primary span.icon {
+            font-size: 15px;
+        }
+        #msg {
+            font-size: 12px;
+        }
+        #msg.error { color: #b91c1c; }
+        #msg.ok { color: #16a34a; }
+        .hint {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 4px;
+        }
+        .filters {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            font-size: 12px;
+            align-items: center;
+        }
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .filter-item label {
+            color: #4b5563;
+        }
+        .filter-item input[type="time"],
+        .filter-item input[type="number"],
+        .filter-item input[type="date"],
+        .filter-item select {
+            font-size: 12px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+        }
+        #chartContainer {
+            width: 100%;
+            height: 800px;
+            margin-top: 18px;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            padding: 10px;
+            background: radial-gradient(circle at top left, #eef2ff 0, #ffffff 40%);
+        }
+        @media (max-width: 768px) {
+            .card {
+                padding: 16px 14px 18px;
+            }
+            .card-header {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .control-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            #chartContainer {
+                height: 360px;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="page-wrapper">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-header-left">
+                <h1>一天中每分钟获奖人数分布</h1>
+                <p>粘贴 time,roleid，按日期 / 时间段 / 粒度统计，支持柱状图 & 折线图，以及两天对比。</p>
+            </div>
+            <div class="card-header-right">
+                <div>时间维度：一天中的分钟（可聚合）</div>
+                <div>图形：纵轴为时间（或时间段），横轴为获奖次数</div>
+            </div>
+        </div>
+
+        <div class="section-title">
+            数据输入
+            <span class="tag">粘贴模式</span>
+        </div>
+        <div class="example-box">
+支持的 time 格式示例：
+time,roleid
+16:20,2045401754
+13:33,1522960124
+2026-02-02 02:37:14.000,1451304816
+2026-02-03 18:01:03.500,1234567890
+        </div>
+
+        <div class="textarea-wrapper">
+            <textarea id="inputArea" placeholder="在这里粘贴 time,roleid 的表格内容（支持 HH:MM 或 YYYY-MM-DD HH:MM:SS.sss，逗号或 Tab/空格分隔）"></textarea>
+        </div>
+        <div class="hint">可以包含表头（例如 time,roleid）。</div>
+
+        <div class="filters">
+            <div class="filter-item">
+                <label for="dateFilter">日期：</label>
+                <input id="dateFilter" type="date">
+                <span style="font-size:11px;color:#9ca3af;">留空=所有日期汇总</span>
+            </div>
+            <div class="filter-item">
+                <label for="compareDate">对比日期：</label>
+                <input id="compareDate" type="date">
+                <span style="font-size:11px;color:#9ca3af;">可选，用于画第二条线</span>
+            </div>
+            <div class="filter-item">
+                <label for="startTime">起始时间：</label>
+                <input id="startTime" type="time" value="00:00">
+            </div>
+            <div class="filter-item">
+                <label for="endTime">结束时间：</label>
+                <input id="endTime" type="time" value="23:59">
+            </div>
+            <div class="filter-item">
+                <label for="granularity">粒度：</label>
+                <input id="granularity" type="number" min="1" max="60" value="1" style="width:70px;">
+                <span>分钟（1~60）</span>
+            </div>
+            <div class="filter-item">
+                <label for="chartType">图表类型：</label>
+                <select id="chartType">
+                    <option value="bar">柱状图</option>
+                    <option value="line" selected>折线图</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-row">
+            <div>
+                <button id="generateBtn" class="btn-primary">
+                    <span class="icon">📊</span>
+                    <span>生成图表</span>
+                </button>
+            </div>
+            <div id="msg"></div>
+        </div>
+
+        <div id="chartContainer">
+            <canvas id="rewardChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    const inputArea = document.getElementById('inputArea');
+    const generateBtn = document.getElementById('generateBtn');
+    const msg = document.getElementById('msg');
+    const startTimeInput = document.getElementById('startTime');
+    const endTimeInput = document.getElementById('endTime');
+    const granularityInput = document.getElementById('granularity');
+    const dateFilterInput = document.getElementById('dateFilter');
+    const compareDateInput = document.getElementById('compareDate');
+    const chartTypeSelect = document.getElementById('chartType');
+
+    let chartInstance = null;
+
+    generateBtn.addEventListener('click', () => {
+        const text = inputArea.value.trim();
+        if (!text) {
+            setMsg('请先粘贴内容。', 'error');
+            return;
+        }
+        try {
+            const data = parseTextToData(text);
+
+            const startHHMM = startTimeInput.value || '00:00';
+            const endHHMM = endTimeInput.value || '23:59';
+            let stepMinutes = parseInt(granularityInput.value, 10) || 1;
+
+            if (stepMinutes < 1 || stepMinutes > 60) {
+                setMsg('粒度必须在 1~60 分钟之间。', 'error');
+                return;
+            }
+
+            const startMinutes = hhmmToMinutes(startHHMM);
+            const endMinutes = hhmmToMinutes(endHHMM);
+            if (endMinutes < startMinutes) {
+                setMsg('结束时间不能早于起始时间。', 'error');
+                return;
+            }
+
+            const dateFilter = dateFilterInput.value || null;      // 主日期
+            const compareDate = compareDateInput.value || null;    // 对比日期
+            const chartType = chartTypeSelect.value || 'line';
+
+            if (compareDate && dateFilter && compareDate === dateFilter) {
+                setMsg('“日期”和“对比日期”不能相同。', 'error');
+                return;
+            }
+
+            const options = {
+                startMinutes,
+                endMinutes,
+                stepMinutes,
+                dateFilter,
+                compareDate,
+                chartType
+            };
+
+            renderChartFromData(data, options);
+
+            let dateText;
+            if (dateFilter && compareDate) {
+                dateText = `日期=${dateFilter} 与 对比日期=${compareDate}，`;
+            } else if (dateFilter) {
+                dateText = `日期=${dateFilter}，`;
+            } else if (compareDate) {
+                dateText = `对比日期=${compareDate}（主线为所有日期汇总），`;
+            } else {
+                dateText = '所有日期汇总，';
+            }
+
+            setMsg(
+                `解析成功，记录数：${data.length}，${dateText}时间段 ${startHHMM} ~ ${endHHMM}，粒度 ${stepMinutes} 分钟。`,
+                'ok'
+            );
+        } catch (e) {
+            console.error(e);
+            setMsg('解析失败：' + e.message, 'error');
+        }
+    });
+
+    function setMsg(text, type) {
+        msg.textContent = text;
+        msg.className = type === 'ok' ? 'ok' : (type === 'error' ? 'error' : '');
+    }
+
+    // "HH:MM" -> 距 00:00 的分钟数
+    function hhmmToMinutes(hhmm) {
+        const [h, m] = hhmm.split(':').map(x => parseInt(x, 10) || 0);
+        return h * 60 + m;
+    }
+
+    // index(0~1439) -> "HH:MM"
+    function indexToHHMM(idx) {
+        const h = Math.floor(idx / 60);
+        const m = idx % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+
+    // 解析粘贴文本 -> { time, roleid }[]
+    function parseTextToData(text) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length === 0) {
+            throw new Error('内容为空');
+        }
+
+        let startIndex = 0;
+        let hasHeader = false;
+        let headerCols = [];
+
+        const firstLine = lines[0].trim();
+        if (firstLine.toLowerCase().includes('time') && firstLine.toLowerCase().includes('role')) {
+            hasHeader = true;
+            startIndex = 1;
+            headerCols = splitLine(firstLine);
+        }
+
+        const result = [];
+
+        for (let i = startIndex; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const cols = splitLine(line);
+            if (cols.length < 2) continue;
+
+            let time, roleid;
+
+            if (hasHeader) {
+                const colMap = {};
+                headerCols.forEach((h, idx) => {
+                    colMap[h.trim().toLowerCase()] = idx;
+                });
+                const tIdx = colMap['time'];
+                const rIdx = colMap['roleid'];
+                if (tIdx == null || rIdx == null) {
+                    throw new Error('无法根据表头识别 time / roleid 列');
+                }
+                time = cols[tIdx];
+                roleid = cols[rIdx];
+            } else {
+                time = cols[0];
+                roleid = cols[1];
+            }
+
+            time = String(time).trim();
+            roleid = String(roleid).trim();
+            if (!time) continue;
+
+            result.push({ time, roleid });
+        }
+
+        if (result.length === 0) {
+            throw new Error('未解析到任何数据，请检查格式。');
+        }
+
+        return result;
+    }
+
+    // 行分隔：逗号 > Tab > 空格
+    function splitLine(line) {
+        if (line.includes(',')) {
+            return line.split(',').map(s => s.trim());
+        }
+        if (line.includes('\t')) {
+            return line.split('\t').map(s => s.trim());
+        }
+        return line.split(/\s+/).map(s => s.trim());
+    }
+
+    // 从 time 字符串提取 "YYYY-MM-DD"，不存在则返回 null
+    function extractDate(timeStr) {
+        if (!timeStr) return null;
+        timeStr = String(timeStr).trim();
+        if (timeStr.includes(' ')) {
+            const parts = timeStr.split(' ');
+            const maybeDate = parts[0];
+            if (/^\d{4}-\d{2}-\d{2}$/.test(maybeDate)) {
+                return maybeDate;
+            }
+        }
+        return null;
+    }
+
+    // 从 time 字符串提取 "HH:MM"
+    function extractHHMM(timeStr) {
+        if (!timeStr) return null;
+        timeStr = String(timeStr).trim();
+
+        let timePart = timeStr;
+        if (timeStr.includes(' ')) {
+            const parts = timeStr.split(' ');
+            timePart = parts[1] || parts[0];
+        }
+
+        const tParts = timePart.split(':');
+        if (tParts.length < 2) return null;
+
+        let h = tParts[0];
+        let m = tParts[1];
+
+        if (m.includes('.')) {
+            m = m.split('.')[0];
+        }
+
+        h = h.padStart(2, '0');
+        m = m.padStart(2, '0');
+
+        return `${h}:${m}`;
+    }
+
+    // 聚合并画图：支持日期过滤 + 对比日期 + 时间窗口 + 任意粒度 + 图表类型
+    // 聚合并画图：支持日期过滤 + 对比日期 + 时间窗口 + 任意粒度 + 图表类型
+function renderChartFromData(
+    data,
+    { startMinutes, endMinutes, stepMinutes, dateFilter, compareDate, chartType }
+) {
+    const countsAll = {};        // 所有日期汇总： key = 分钟索引(0~1439)
+    const countsByDate = {};     // 每个具体日期： countsByDate[date][idx] = 次数
+
+    // 先统计所有数据
+    data.forEach(row => {
+        const dateStr = extractDate(row.time); // 可能为 null
+        const hhmm = extractHHMM(row.time);
+        if (!hhmm) return;
+
+        const idx = hhmmToMinutes(hhmm);
+
+        // 所有日期的汇总
+        countsAll[idx] = (countsAll[idx] || 0) + 1;
+
+        // 按日期统计
+        if (dateStr) {
+            if (!countsByDate[dateStr]) countsByDate[dateStr] = {};
+            countsByDate[dateStr][idx] = (countsByDate[dateStr][idx] || 0) + 1;
+        }
+    });
+
+    // 决定主曲线和对比曲线对应的计数表
+    let baseLabel;
+    let baseCounts;
+    let compareLabel = null;
+    let compareCounts = null;
+
+    if (dateFilter) {
+        baseLabel = dateFilter;
+        baseCounts = countsByDate[dateFilter] || {};
+    } else {
+        baseLabel = '所有日期汇总';
+        baseCounts = countsAll;
+    }
+
+    if (compareDate && compareDate !== dateFilter) {
+        compareLabel = compareDate;
+        compareCounts = countsByDate[compareDate] || {};
+    }
+
+    const labels = [];
+    const baseValues = [];
+    const compareValues = [];
+
+    // 按时间窗口 + 粒度聚合
+    for (let t = startMinutes; t <= endMinutes; t += stepMinutes) {
+        const bandStart = t;
+        const bandEnd = Math.min(t + stepMinutes, endMinutes + 1); // 右开区间
+
+        let baseSum = 0;
+        let compareSum = 0;
+
+        for (let i = bandStart; i < bandEnd; i++) {
+            if (baseCounts[i]) baseSum += baseCounts[i];
+            if (compareCounts && compareCounts[i]) compareSum += compareCounts[i];
+        }
+
+        let label;
+        if (stepMinutes === 1) {
+            label = indexToHHMM(bandStart);
+        } else {
+            label = `${indexToHHMM(bandStart)} - ${indexToHHMM(bandEnd - 1)}`;
+        }
+
+        labels.push(label);
+        baseValues.push(baseSum);
+        if (compareCounts) compareValues.push(compareSum);
+    }
+
+    // 配色
+    const baseColor = 'rgba(79, 70, 229, 1)';          // 主线深紫
+    const baseBgBar = 'rgba(79, 70, 229, 0.9)';        // 主柱实心紫
+    const compareColor = 'rgba(16, 185, 129, 1)';      // 对比线绿色
+    const compareBgBar = 'rgba(16, 185, 129, 0.9)';    // 对比柱实心绿
+
+    const datasets = [];
+
+    // 主数据集
+    datasets.push({
+        label: `${baseLabel}：每${stepMinutes}分钟获奖次数`,
+        data: baseValues,
+        backgroundColor: chartType === 'bar'
+            ? baseBgBar
+            : 'rgba(129, 140, 248, 0.15)',
+        borderColor: baseColor,
+        borderWidth: chartType === 'bar' ? 1 : 1.5,
+        tension: 0.25,
+        pointRadius: chartType === 'line' ? 1.5 : 0,
+        fill: chartType === 'line'
+    });
+
+    // 对比数据集（如果有）
+    if (compareCounts) {
+        datasets.push({
+            label: `${compareLabel}：每${stepMinutes}分钟获奖次数`,
+            data: compareValues,
+            backgroundColor: chartType === 'bar'
+                ? compareBgBar
+                : 'rgba(34, 197, 94, 0.15)',
+            borderColor: compareColor,
+            borderWidth: chartType === 'bar' ? 1 : 1.5,
+            tension: 0.25,
+            pointRadius: chartType === 'line' ? 1.5 : 0,
+            fill: false
+        });
+    }
+
+    const ctx = document.getElementById('rewardChart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+        type: chartType,
+        data: {
+            labels,
+            datasets
+        },
+        options: {
+            indexAxis: 'y',  // 纵轴为时间 / 时间段
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                y: {
+                    title: {
+                        display: true,
+                        text: stepMinutes === 1
+                            ? '时间（分钟，HH:MM）'
+                            : `时间区间（每 ${stepMinutes} 分钟）`
+                    },
+                    ticks: {
+                        maxTicksLimit: 40
+                    },
+                    grid: {
+                        display: chartType === 'bar' ? false : true
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: '获奖次数'
+                    },
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.3)'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: {
+                        boxWidth: 12
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        title(items) {
+                            return `时间：${items[0].label}`;
+                        },
+                        label(item) {
+                            return `${item.dataset.label}：${item.formattedValue}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+        
+</script>
+</body>
+</html>
