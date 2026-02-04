@@ -181,7 +181,7 @@
             overflow-y: auto;
         }
 
-        /* 表格容器样式 */
+        /* 时间段表格 */
         #tableContainer {
             margin-top: 16px;
             max-height: 300px;
@@ -210,6 +210,17 @@
         #tableContainer th:first-child,
         #tableContainer td:first-child {
             text-align: left;
+        }
+
+        /* 累积投放/时间进度 */
+        #summaryContainer {
+            margin-top: 16px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: #ecfdf5;
+            font-size: 12px;
+            color: #166534;
         }
 
         /* 重复获奖角色列表 */
@@ -245,15 +256,7 @@
             font-size: 12px;
             color: #6b7280;
         }
-        #summaryContainer {
-            margin-top: 16px;
-            padding: 8px 12px;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            background: #ecfdf5; /* 淡绿色背景 */
-            font-size: 12px;
-            color: #166534;
-        }
+
         @media (max-width: 768px) {
             .card {
                 padding: 16px 14px 18px;
@@ -347,14 +350,22 @@ time,roleid
             </div>
             <div id="msg"></div>
         </div>
-        <!-- 累积投放数量 -->
-        <div id="summaryContainer"></div>
 
         <div id="chartContainer">
             <canvas id="rewardChart"></canvas>
         </div>
 
-        <!-- 表格容器 -->
+        <!-- 累积投放 + 时间进度 -->
+        <div id="summaryContainer"></div>
+
+        <!-- 下载按钮 + 时间段表 -->
+        <div style="margin-top: 12px; display:flex; justify-content: space-between; align-items: center; gap:8px;">
+            <div style="font-size:12px; color:#6b7280;">时间段-获奖次数表</div>
+            <button id="downloadTableBtn" class="btn-primary" style="padding:4px 10px; font-size:11px; box-shadow:none;">
+                <span class="icon">⬇</span>
+                <span>下载表格（CSV）</span>
+            </button>
+        </div>
         <div id="tableContainer"></div>
 
         <!-- 重复获奖角色列表 -->
@@ -365,6 +376,7 @@ time,roleid
 <script>
     const inputArea = document.getElementById('inputArea');
     const generateBtn = document.getElementById('generateBtn');
+    const downloadTableBtn = document.getElementById('downloadTableBtn');
     const msg = document.getElementById('msg');
     const startTimeInput = document.getElementById('startTime');
     const endTimeInput = document.getElementById('endTime');
@@ -374,6 +386,14 @@ time,roleid
     const chartTypeSelect = document.getElementById('chartType');
 
     let chartInstance = null;
+
+    // 用于导出表格的数据
+    let lastTableLabels = [];
+    let lastTableBaseValues = [];
+    let lastTableCompareValues = [];
+    let lastTableBaseLabel = '';
+    let lastTableCompareLabel = '';
+    let lastTableStepMinutes = 1;
 
     generateBtn.addEventListener('click', () => {
         const text = inputArea.value.trim();
@@ -400,8 +420,8 @@ time,roleid
                 return;
             }
 
-            const dateFilter = dateFilterInput.value || null;      // 主日期
-            const compareDate = compareDateInput.value || null;    // 对比日期
+            const dateFilter = dateFilterInput.value || null;      
+            const compareDate = compareDateInput.value || null;    
             const chartType = chartTypeSelect.value || 'line';
 
             if (compareDate && dateFilter && compareDate === dateFilter) {
@@ -441,25 +461,26 @@ time,roleid
         }
     });
 
+    if (downloadTableBtn) {
+        downloadTableBtn.addEventListener('click', downloadTableAsCSV);
+    }
+
     function setMsg(text, type) {
         msg.textContent = text;
         msg.className = type === 'ok' ? 'ok' : (type === 'error' ? 'error' : '');
     }
 
-    // "HH:MM" -> 距 00:00 的分钟数
     function hhmmToMinutes(hhmm) {
         const [h, m] = hhmm.split(':').map(x => parseInt(x, 10) || 0);
         return h * 60 + m;
     }
 
-    // index(0~1439) -> "HH:MM"
     function indexToHHMM(idx) {
         const h = Math.floor(idx / 60);
         const m = idx % 60;
         return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     }
 
-    // 解析粘贴文本 -> { time, roleid }[]
     function parseTextToData(text) {
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
         if (lines.length === 0) {
@@ -519,7 +540,6 @@ time,roleid
         return result;
     }
 
-    // 行分隔：逗号 > Tab > 空格
     function splitLine(line) {
         if (line.includes(',')) {
             return line.split(',').map(s => s.trim());
@@ -530,7 +550,6 @@ time,roleid
         return line.split(/\s+/).map(s => s.trim());
     }
 
-    // 从 time 字符串提取 "YYYY-MM-DD"，不存在则返回 null
     function extractDate(timeStr) {
         if (!timeStr) return null;
         timeStr = String(timeStr).trim();
@@ -544,7 +563,6 @@ time,roleid
         return null;
     }
 
-    // 从 time 字符串提取 "HH:MM"
     function extractHHMM(timeStr) {
         if (!timeStr) return null;
         timeStr = String(timeStr).trim();
@@ -571,38 +589,32 @@ time,roleid
         return `${h}:${m}`;
     }
 
-    // 聚合并画图：支持日期过滤 + 对比日期 + 时间窗口 + 任意粒度 + 图表类型
     function renderChartFromData(
         data,
         { startMinutes, endMinutes, stepMinutes, dateFilter, compareDate, chartType }
     ) {
-        const countsAll = {};        // 所有日期汇总： key = 分钟索引(0~1439)
-        const countsByDate = {};     // 每个具体日期： countsByDate[date][idx] = 次数
-        const roleCounts = {};       // 当前筛选条件下，各 roleid 的次数
+        const countsAll = {};
+        const countsByDate = {};
+        const roleCounts = {};
+        let lastIdxForSummary = null;
 
-        // 先统计所有数据
         data.forEach(row => {
-            const dateStr = extractDate(row.time); // 可能为 null
+            const dateStr = extractDate(row.time);
             const hhmm = extractHHMM(row.time);
             if (!hhmm) return;
 
             const idx = hhmmToMinutes(hhmm);
 
-            // 所有日期的汇总（不受时间段过滤影响，供整体分布用）
             countsAll[idx] = (countsAll[idx] || 0) + 1;
 
-            // 按日期统计
             if (dateStr) {
                 if (!countsByDate[dateStr]) countsByDate[dateStr] = {};
                 countsByDate[dateStr][idx] = (countsByDate[dateStr][idx] || 0) + 1;
             }
 
-            // 统计当前筛选条件下的角色获奖次数：
-            // 仅统计：时间在 [startMinutes, endMinutes] 内，
-            // 并且日期满足 (无日期过滤) 或 (是日期 / 对比日期之一)
             const inTime = idx >= startMinutes && idx <= endMinutes;
             let inDate = true;
-            if (dateFilter ) {
+            if (dateFilter) {
                 inDate = !!(dateStr && dateStr === dateFilter);
             }
             if (inTime && inDate) {
@@ -610,10 +622,12 @@ time,roleid
                 if (rid) {
                     roleCounts[rid] = (roleCounts[rid] || 0) + 1;
                 }
+                if (lastIdxForSummary === null || idx > lastIdxForSummary) {
+                    lastIdxForSummary = idx;
+                }
             }
         });
 
-        // 决定主曲线和对比曲线对应的计数表
         let baseLabel;
         let baseCounts;
         let compareLabel = null;
@@ -627,7 +641,7 @@ time,roleid
             baseCounts = countsAll;
         }
 
-        if (compareDate &&Date !== dateFilter) {
+        if (compareDate && compareDate !== dateFilter) {
             compareLabel = compareDate;
             compareCounts = countsByDate[compareDate] || {};
         }
@@ -636,10 +650,9 @@ time,roleid
         const baseValues = [];
         const compareValues = [];
 
-        // 按时间窗口 + 粒度聚合
         for (let t = startMinutes; t <= endMinutes; t += stepMinutes) {
             const bandStart = t;
-            const bandEnd = Math.min(t + stepMinutes, endMinutes + 1); // 右开区间
+            const bandEnd = Math.min(t + stepMinutes, endMinutes + 1);
 
             let baseSum = 0;
             let compareSum = 0;
@@ -661,15 +674,13 @@ time,roleid
             if (compareCounts) compareValues.push(compareSum);
         }
 
-        // 配色
-        const baseColor = 'rgba(79, 70, 229, 1)';          // 主线深紫
-        const baseBgBar = 'rgba(79, 70, 229, 0.95)';       // 主柱更实
-        const compareColor = 'rgba(16, 185, 129, 1)';      // 对比线绿色
-        const compareBgBar = 'rgba(16, 185, 129, 0.95)';   // 对比柱更实
+        const baseColor = 'rgba(79, 70, 229, 1)';
+        const baseBgBar = 'rgba(79, 70, 229, 0.95)';
+        const compareColor = 'rgba(16, 185, 129, 1)';
+        const compareBgBar = 'rgba(16, 185, 129, 0.95)';
 
         const datasets = [];
 
-        // 主数据集
         datasets.push({
             label: `${baseLabel}：每${stepMinutes}分钟获奖次数`,
             data: baseValues,
@@ -683,7 +694,6 @@ time,roleid
             fill: chartType === 'line'
         });
 
-        // 对比数据集（如果有）
         if (compareCounts) {
             datasets.push({
                 label: `${compareLabel}：每${stepMinutes}分钟获奖次数`,
@@ -703,7 +713,6 @@ time,roleid
         const ctx = canvas.getContext('2d');
         if (chartInstance) chartInstance.destroy();
 
-        // 动态高度：按时间段数量调整
         const bucketCount = labels.length;
         let perBucket = 8;
         if (stepMinutes >= 30) {
@@ -720,7 +729,7 @@ time,roleid
                 datasets
             },
             options: {
-                indexAxis: 'y',  // 纵轴为时间 / 时间段
+                indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: {
@@ -774,19 +783,52 @@ time,roleid
                 }
             }
         });
-        // 累积已投放数量（只看主日期 + 时间段）
-        renderSummary(roleCounts, dateFilter, startMinutes, endMinutes);
-        // 生成时段表格
-        renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes);
 
-        // 生成重复获奖角色列表
+        // 累积投放 + 时间进度
+        renderSummary(roleCounts, dateFilter, startMinutes, endMinutes, lastIdxForSummary);
+        // 时间段表格
+        renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes);
+        // 重复获奖玩家
         renderRoleDuplicates(roleCounts);
     }
 
-    // 根据当前结果生成“时间段”表格（带色阶）
+    // 累积已投放数量 + 时间进度
+    function renderSummary(roleCounts, dateFilter, startMinutes, endMinutes, lastIdxForSummary) {
+        const container = document.getElementById('summaryContainer');
+        if (!container) return;
+
+        const total = Object.values(roleCounts).reduce((sum, v) => sum + v, 0);
+        const dateText = dateFilter ? `日期 ${dateFilter}` : '所有日期';
+
+        const startHHMM = indexToHHMM(startMinutes);
+        const endHHMM = indexToHHMM(endMinutes);
+
+        let progressText = '时间进度：无数据';
+        if (lastIdxForSummary !== null) {
+            const minutesFromMidnight = lastIdxForSummary;
+            const percent = (minutesFromMidnight / 1440) * 100;
+            const percentText = percent.toFixed(2) + '%';
+            const lastTimeHHMM = indexToHHMM(lastIdxForSummary);
+            progressText = `时间进度：最后记录时间 ${lastTimeHHMM}，占全天 ${percentText}`;
+        }
+
+        container.textContent =
+            `${dateText} 在 ${startHHMM} ~ ${endHHMM} 时间段内，累积已投放奖励数量：${total}；` +
+            progressText;
+    }
+
+    // 时间段表格 + 色阶
     function renderTable(labels, baseValues, compareValues, baseLabel, compareLabel, stepMinutes) {
         const container = document.getElementById('tableContainer');
         if (!container) return;
+
+        // 保存最近一次表格数据，供下载用
+        lastTableLabels = labels.slice();
+        lastTableBaseValues = baseValues.slice();
+        lastTableCompareValues = compareValues ? compareValues.slice() : [];
+        lastTableBaseLabel = baseLabel || '主数据';
+        lastTableCompareLabel = compareLabel || '';
+        lastTableStepMinutes = stepMinutes;
 
         if (!labels || labels.length === 0) {
             container.innerHTML = '';
@@ -795,7 +837,6 @@ time,roleid
 
         const hasCompare = !!(compareLabel && compareValues && compareValues.length === labels.length);
 
-        // 计算每一行的“用于着色的值” = max(主, 对比)
         const rowValues = labels.map((_, i) => {
             const v1 = baseValues[i] || 0;
             const v2 = hasCompare ? (compareValues[i] || 0) : 0;
@@ -812,28 +853,22 @@ time,roleid
             return (v - minVal) / (maxVal - minVal);
         }
 
-        // 色阶：0 → 绿色; 0.5 → 黄; 1 → 红
         function valueToColor(v) {
             const t = normalize(v);
-
             function lerp(a, b, t) { return a + (b - a) * t; }
 
             let r, g, b;
-
             if (t <= 0.5) {
                 const t2 = t / 0.5;
-                // 绿(#e5f9e7) -> 黄(#fff7c2)
                 r = lerp(0xe5, 0xff, t2);
                 g = lerp(0xf9, 0xf7, t2);
                 b = lerp(0xe7, 0xc2, t2);
             } else {
                 const t2 = (t - 0.5) / 0.5;
-                // 黄(#fff7c2) -> 红(#fde2e1)
                 r = lerp(0xff, 0xfd, t2);
                 g = lerp(0xf7, 0xe2, t2);
                 b = lerp(0xc2, 0xe1, t2);
             }
-
             r = Math.round(r);
             g = Math.round(g);
             b = Math.round(b);
@@ -868,26 +903,17 @@ time,roleid
         container.innerHTML = html;
     }
 
-    // 累积已投放数量（只看主日期 + 时间段）
-    function renderSummary(roleCounts, dateFilter, startMinutes, endMinutes) {
-        const container = document.getElementById('summaryContainer');
-        if (!container) return;
-
-        const summary = Object.values(roleCounts).reduce((acc, count) => acc + count, 0);
-        container.innerHTML = `<div>累积已投放数量：${summary}</div>`;
-    }
-    
-    // 生成重复获奖角色表
+    // 重复获奖角色表
     function renderRoleDuplicates(roleCounts) {
         const container = document.getElementById('dupContainer');
         if (!container) return;
 
         const entries = Object.entries(roleCounts)
             .filter(([, count]) => count > 1)
-            .sort((a, b) => b[1] - a[1]); // 按次数从高到低
+            .sort((a, b) => b[1] - a[1]);
 
         if (entries.length === 0) {
-            container.innerHTML = '<div class="dup-empty">当前筛选条件下，没有玩家获得多个奖励。</div>';
+            container.innerHTML = '<div class="dup-empty">当前主日期/时间段内，没有玩家获得多个奖励。</div>';
             return;
         }
 
@@ -900,6 +926,63 @@ time,roleid
 
         html += '</tbody></table>';
         container.innerHTML = html;
+    }
+
+    // 下载当前时间段表为 CSV
+    function downloadTableAsCSV() {
+        if (!lastTableLabels || lastTableLabels.length === 0) {
+            alert('当前没有可导出的表格数据，请先生成图表。');
+            return;
+        }
+
+        const hasCompare = !!(lastTableCompareLabel && lastTableCompareValues && lastTableCompareValues.length === lastTableLabels.length);
+
+        const header = [
+            'time' + (lastTableStepMinutes > 1 ? '_range' : ''),
+            lastTableBaseLabel
+        ];
+        if (hasCompare) {
+            header.push(lastTableCompareLabel);
+        }
+
+        const rows = [];
+        rows.push(header);
+
+        for (let i = 0; i < lastTableLabels.length; i++) {
+            const row = [];
+            row.push(lastTableLabels[i]);
+            row.push(lastTableBaseValues[i] || 0);
+            if (hasCompare) {
+                row.push(lastTableCompareValues[i] || 0);
+            }
+            rows.push(row);
+        }
+
+        const lines = rows.map(cols =>
+            cols
+                .map(v => {
+                    const s = String(v);
+                    if (s.includes(',') || s.includes('"')) {
+                        return '"' + s.replace(/"/g, '""') + '"';
+                    }
+                    return s;
+                })
+                .join(',')
+        );
+        const csvContent = lines.join('\r\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        const now = new Date();
+        const ts = now.toISOString().slice(0,19).replace(/[:T]/g, '');
+        a.href = url;
+        a.download = `time_bucket_rewards_${ts}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 </script>
 </body>
